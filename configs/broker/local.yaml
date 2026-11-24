@@ -1,0 +1,12 @@
+keychain_service: cheating-escalation.openrouter
+keychain_account: ${oc.env:USER}
+socket: outputs/broker/control.sock
+output_root: outputs/runs
+base_url: https://openrouter.ai/api/v1
+models:
+  - deepseek/deepseek-v4-flash
+  - z-ai/glm-5.3-flash
+  - moonshotai/kimi-k3
+max_trial_cost_usd: 10
+trial_lifetime_sec: 14400
+request_timeout_sec: 3600
