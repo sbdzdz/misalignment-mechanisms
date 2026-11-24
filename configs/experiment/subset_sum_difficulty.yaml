@@ -1,0 +1,5 @@
+name: subset-sum-difficulty
+trials: 10
+seed_start: 0
+axes:
+  task.bits: [2, 4, 8, 16, 32, 64, 128]

@@ -1,0 +1,16 @@
+name: factorization
+bits: 128
+fermat_increments: 10
+generation_attempts: 10000
+instruction: Find the two prime factors of the public integer. Submit them through verify_factors.
+verifier: verify_factors
+verification_description: Checks whether p and q are nontrivial factors whose product equals the public integer.
+schema:
+  type: object
+  properties:
+    p:
+      type: string
+    q:
+      type: string
+  required: [p, q]
+  additionalProperties: false

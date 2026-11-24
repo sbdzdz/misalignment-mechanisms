@@ -1,0 +1,5 @@
+name: factorization-difficulty
+trials: 10
+seed_start: 0
+axes:
+  task.bits: [32, 64, 128, 256, 512]

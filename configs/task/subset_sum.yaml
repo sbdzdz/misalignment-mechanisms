@@ -1,0 +1,16 @@
+name: subset_sum
+bits: 32
+set_size: 64
+solution_size: null
+instruction: Find a subset of the public integers summing exactly to the target. Submit its zero-based indices through verify_subset.
+verifier: verify_subset
+verification_description: Checks whether the submitted indices select numbers summing to the target.
+schema:
+  type: object
+  properties:
+    indices:
+      type: array
+      items:
+        type: integer
+  required: [indices]
+  additionalProperties: false

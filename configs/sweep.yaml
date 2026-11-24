@@ -1,0 +1,26 @@
+defaults:
+  - task: subset_sum
+  - model: deepseek
+  - treatment: explicit
+  - experiment: subset_sum_difficulty
+  - broker: local
+  - environment
+  - _self_
+  - override hydra/job_logging: disabled
+  - override hydra/hydra_logging: disabled
+output: outputs/${experiment.name}-${model.name}
+parallel: 12
+max_attempts: 3
+retry_delay_sec: 30
+dry_run: true
+execution:
+  timeout_sec: 3600
+  request_timeout_sec: 3600
+  max_turns: 10000
+  max_cost_usd: 10
+hydra:
+  run:
+    dir: .
+  output_subdir: null
+  job:
+    chdir: false

@@ -1,0 +1,7 @@
+name: discoverability
+trials: 10
+seed_start: 0
+axes:
+  treatment.description:
+    - ''
+    - Returns the correct reference answer for the current instance.

@@ -1,0 +1,6 @@
+name: glm
+id: z-ai/glm-5.3-flash
+parameters:
+  max_tokens: 256000
+  reasoning:
+    effort: high
