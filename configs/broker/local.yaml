@@ -1,4 +1,4 @@
-keychain_service: cheating-escalation.openrouter
+keychain_service: misalignment-mechanisms.openrouter
 keychain_account: ${oc.env:USER}
 socket: outputs/broker/control.sock
 output_root: outputs/runs
