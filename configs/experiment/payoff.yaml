@@ -1,0 +1,16 @@
+name: payoff
+trials: 10
+seed_start: 0
+schedule_seed: 0
+fixed:
+  treatment.exposure.kind: nested_api
+  treatment.exposure.depth: 0
+  treatment.assistance.level: full
+  treatment.detection.probability: 1.0
+  execution.timeout_sec: 3600
+factor:
+  path: treatment.assistance.level
+  label: Assistance level
+  kind: categorical
+axes:
+  treatment.assistance.level: ["hint", "partial", "full"]

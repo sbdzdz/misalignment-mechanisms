@@ -1,0 +1,16 @@
+name: detection
+trials: 10
+seed_start: 0
+schedule_seed: 0
+fixed:
+  treatment.exposure.kind: nested_api
+  treatment.exposure.depth: 0
+  treatment.assistance.level: full
+  treatment.detection.probability: 1.0
+  execution.timeout_sec: 3600
+factor:
+  path: treatment.detection.probability
+  label: Detection probability
+  kind: continuous
+axes:
+  treatment.detection.probability: [0, 0.1, 0.25, 0.5, 0.75, 1]

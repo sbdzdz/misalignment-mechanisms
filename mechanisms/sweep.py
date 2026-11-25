@@ -2,6 +2,7 @@ import asyncio
 import copy
 import fcntl
 import itertools
+import random
 import time
 import uuid
 
@@ -32,7 +33,7 @@ def expand(config):
         )
         setting = dict(zip(axes, values))
         missing = object()
-        for key, value in setting.items():
+        for key, value in (config["experiment"].get("fixed", {}) | setting).items():
             if OmegaConf.select(spec, key, default=missing) is missing:
                 raise ValueError(f"Unknown sweep axis: {key}")
             OmegaConf.update(spec, key, value)
@@ -53,7 +54,13 @@ def prepare(config, directory):
     lock = ROOT / "uv.lock"
     if lock.exists():
         source["uv.lock"] = lock.read_text()
-    fingerprint = digest(dict(specifications=specifications, source=source))
+    fingerprint = digest(
+        dict(
+            specifications=specifications,
+            source=source,
+            experiment=config["experiment"],
+        )
+    )
     path = directory / "manifest.json"
     if path.exists():
         manifest = read(path)
@@ -73,6 +80,7 @@ def prepare(config, directory):
     if len({t["id"] for t in trials}) != len(trials):
         raise ValueError("Sweep contains duplicate trials")
     manifest = dict(fingerprint=fingerprint, config=config, trials=trials)
+    save(directory / "source.json", source)
     save(path, manifest)
     return manifest
 
@@ -136,6 +144,7 @@ async def execute(config, directory, manifest):
             except RuntimeError as error:
                 record.update(status="failed", retryable=False, error=str(error))
             finally:
+                env.finish(record.get("outcome", record["status"]))
                 if credentials:
                     try:
                         await asyncio.to_thread(
@@ -170,7 +179,9 @@ async def execute(config, directory, manifest):
                 await asyncio.sleep(config["retry_delay_sec"])
             await attempt(trial)
 
-    await asyncio.gather(*(slot(trial) for trial in manifest["trials"]))
+    ordered = list(manifest["trials"])
+    random.Random(config["experiment"].get("schedule_seed", 0)).shuffle(ordered)
+    await asyncio.gather(*(slot(trial) for trial in ordered))
     persist()
 
 

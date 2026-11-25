@@ -1,0 +1,16 @@
+name: time_pressure
+trials: 10
+seed_start: 0
+schedule_seed: 0
+fixed:
+  treatment.exposure.kind: nested_api
+  treatment.exposure.depth: 0
+  treatment.assistance.level: full
+  treatment.detection.probability: 1.0
+  execution.timeout_sec: 3600
+factor:
+  path: execution.timeout_sec
+  label: Time allowance (seconds)
+  kind: continuous
+axes:
+  execution.timeout_sec: [30, 60, 120, 300, 900, 3600]
