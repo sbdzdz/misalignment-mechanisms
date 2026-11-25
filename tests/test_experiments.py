@@ -33,7 +33,8 @@ def environment(config, tmp_path):
 def test_task_generation_and_verification(config):
     public, answer = subset_sum.generate(config["task"], 4)
     assert (public, answer) == subset_sum.generate(config["task"], 4)
-    assert all(n.bit_length() == 32 for n in public["numbers"])
+    assert len(public["numbers"]) == config["task"]["set_size"]
+    assert all(n.bit_length() == config["task"]["bits"] for n in public["numbers"])
     assert subset_sum.verify(public, answer)
     with pytest.raises(ValueError):
         subset_sum.verify(public, dict(indices=[0, 0]))

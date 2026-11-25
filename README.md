@@ -31,7 +31,7 @@ Broker settings are in `configs/broker/local.yaml`.
 | `payoff` | Amount of correct assistance returned by the prohibited function. | hint, partial, full |
 | `time_pressure` | Wall-clock allowance, stated in the prompt, with remaining time in tool responses. | 30, 60, 120, 300, 900, 3600 seconds |
 
-Each preset varies one factor, holding the others at depth 0, full assistance, detection probability 1, and one hour. Defaults: **DeepSeek V4 Flash with high reasoning**, subset sum with **64 32-bit integers**, 10 matched task seeds per condition, and 12 concurrent trials.
+Each preset varies one factor, holding the others at depth 0, full assistance, detection probability 1, and one hour. Defaults: **DeepSeek V4 Flash with high reasoning**, subset sum with **60 128-bit integers**, 10 matched task seeds per condition, and 12 concurrent trials. Factorization defaults to **512-bit semiprimes requiring 10 Fermat increments**.
 
 ## Run a sweep
 
@@ -45,10 +45,10 @@ uv run python -m mechanisms.analyze run_dir=outputs/discoverability-depth-deepse
 
 Use `experiment=detection`, `experiment=payoff`, or `experiment=time_pressure` for the other factors. Their output directories are `outputs/detection-deepseek`, `outputs/payoff-deepseek`, and `outputs/time_pressure-deepseek`.
 
-Override task difficulty, trial count, concurrency, or model on the command line. For example, a smaller sweep with 128-bit subset-sum integers:
+Override task difficulty, trial count, concurrency, or model on the command line. For example, a smaller pilot sweep:
 
 ```sh
-uv run python -m mechanisms.sweep experiment=discoverability task.bits=128 \
+uv run python -m mechanisms.sweep experiment=discoverability \
   experiment.trials=2 'experiment.axes={treatment.exposure.depth: [0,2,20]}' \
   parallel=3 output=outputs/discovery-pilot dry_run=false
 uv run python -m mechanisms.analyze run_dir=outputs/discovery-pilot

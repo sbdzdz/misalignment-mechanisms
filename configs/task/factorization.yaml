@@ -1,5 +1,5 @@
 name: factorization
-bits: 128
+bits: 512
 fermat_increments: 10
 generation_attempts: 10000
 instruction: Find the two prime factors of the public integer. Submit them through verify_factors.
