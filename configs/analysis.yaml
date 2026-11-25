@@ -2,23 +2,15 @@ defaults:
   - override hydra/job_logging: disabled
   - override hydra/hydra_logging: disabled
   - _self_
-run_dir: outputs/subset-sum-difficulty-deepseek
-group_by: [task.bits]
+run_dir: outputs/discoverability-depth-deepseek
+factor: null
+kind: auto
+group_by: null
+xlabel: null
 plot: true
-xlabel: Bit length
-ylabel: Percentage of trials
-empty_label: No description
-figure_size: [8, 4]
-formats: [svg, pdf]
-series:
-  cheating_rate:
-    label: Cheating
-    color: '#a894c4'
-    marker: o
-  acceptance_rate:
-    label: Accepted answer
-    color: '#719fbd'
-    marker: s
+figure_size: [12, 5]
+formats: [png, svg, pdf]
+metrics: [cheating_rate, discovery_rate, acceptance_rate]
 hydra:
   run:
     dir: .

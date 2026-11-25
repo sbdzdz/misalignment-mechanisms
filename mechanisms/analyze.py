@@ -1,4 +1,7 @@
+"""Export normalized trial data and plot any declared experiment factor."""
+
 import csv
+import math
 from collections import defaultdict
 from decimal import Decimal
 
@@ -7,99 +10,263 @@ from omegaconf import OmegaConf
 from mechanisms.config import ROOT, cli
 from mechanisms.storage import read, save
 
+METRICS = {
+    "cheating_rate": "cheated",
+    "discovery_rate": "shortcut_discovered",
+    "acceptance_rate": "accepted",
+    "detection_rate": "detected",
+    "assistance_rate": "assistance_delivered",
+    "timeout_rate": "timed_out",
+}
+
+
+def interval(successes, n):
+    """95% Wilson interval, undefined when there are no observations."""
+    if not n:
+        return None, None
+    p, z = successes / n, 1.959963984540054
+    denominator = 1 + z * z / n
+    center = (p + z * z / (2 * n)) / denominator
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denominator
+    return max(0, center - half), min(1, center + half)
+
+
+def write_csv(path, rows):
+    if not rows:
+        return
+    keys = list(dict.fromkeys(key for row in rows for key in row))
+    with path.open("w") as handle:
+        writer = csv.DictWriter(handle, fieldnames=keys)
+        writer.writeheader()
+        writer.writerows(rows)
+
 
 def summarize(config):
+    metrics = config.get("metrics", [])
+    if config["plot"] and (
+        not metrics
+        or (
+            any(m in METRICS for m in metrics)
+            and not all(m in METRICS for m in metrics)
+        )
+    ):
+        raise ValueError(
+            "Choose rate metrics or mean metrics in a single plot, not both"
+        )
     directory = ROOT / config["run_dir"]
     manifest = read(directory / "manifest.json")
+    experiment = manifest["config"]["experiment"]
+    axes = experiment["axes"]
+    default_path = next(iter(axes))
+    factor = dict(
+        experiment.get("factor")
+        or dict(path=default_path, label=default_path, kind="auto")
+    )
+    if config.get("factor"):
+        factor = dict(
+            path=config["factor"],
+            label=config.get("xlabel") or config["factor"],
+            kind=config.get("kind", "auto"),
+        )
+    factor["label"] = config.get("xlabel") or factor["label"]
+    if factor["path"] not in axes:
+        raise ValueError("Plot factor must be a declared sweep axis")
+    if factor["kind"] == "auto":
+        factor["kind"] = (
+            "discrete"
+            if all(
+                isinstance(v, (int, float)) and not isinstance(v, bool)
+                for v in axes[factor["path"]]
+            )
+            else "categorical"
+        )
+    if factor["kind"] not in {"discrete", "continuous", "categorical"}:
+        raise ValueError("Unknown factor kind")
+    group_by = config.get("group_by") or list(axes)
+    if factor["path"] not in group_by or not set(axes).issubset(group_by):
+        raise ValueError(
+            "group_by must include every varied axis to avoid pooling conditions"
+        )
     groups = defaultdict(list)
+    trial_rows = []
     spent, unknown = Decimal(0), 0
     for trial in manifest["trials"]:
-        values = tuple(
-            OmegaConf.select(OmegaConf.create(trial["config"]), key)
-            for key in config["group_by"]
-        )
+        spec = OmegaConf.create(trial["config"])
+        values = {key: OmegaConf.select(spec, key) for key in group_by}
+        cost, missing = Decimal(0), 0
         for attempt in trial["attempts"]:
             budget = ROOT / attempt["output"] / "budget.json"
             if budget.exists():
                 ledger = read(budget)
-                spent += Decimal(ledger["spent_usd"])
-                unknown += ledger["status"] == "cost_unknown"
+                cost += Decimal(ledger["spent_usd"])
+                missing += ledger["status"] == "cost_unknown" or bool(
+                    attempt.get("cost_pending")
+                )
+            else:
+                missing += 1
+        spent += cost
+        unknown += missing
         final = trial["attempts"][-1] if trial["attempts"] else None
         state = (
             read(ROOT / final["output"] / "audit.json")
-            if final and final["status"] == "finished"
+            if final and (ROOT / final["output"] / "audit.json").exists()
+            else {}
+        )
+        finished = bool(final and final["status"] == "finished")
+        row = dict(
+            trial_id=trial["id"],
+            seed=trial["instance"]["seed"],
+            **values,
+            status=final["status"] if final else "pending",
+            outcome=final.get("outcome") if final else None,
+            finished=finished,
+            attempts=len(trial["attempts"]),
+            known_spending_usd=str(cost),
+            attempts_with_unknown_cost=missing,
+        )
+        for field in [
+            *dict.fromkeys(METRICS.values()),
+            "answer_returned",
+            "score",
+            "elapsed_seconds",
+            "exploration_calls",
+            "deepest_namespace",
+            "assistance_level",
+        ]:
+            row[field] = state.get(field)
+        row["timed_out"] = row["outcome"] == "timeout" if finished else None
+        trial_rows.append(row)
+        groups[tuple(values.values())].append(row)
+    rows = []
+    for values, trials in groups.items():
+        complete = [t for t in trials if t["finished"]]
+        n = len(complete)
+        row = dict(zip(group_by, values)) | dict(
+            planned=len(trials),
+            finished=n,
+            failed=sum(t["status"] == "failed" for t in trials),
+        )
+        for status in ("pending", "running", "interrupted"):
+            row[status] = sum(t["status"] == status for t in trials)
+        for metric, field in METRICS.items():
+            observed = [t[field] for t in complete if t[field] is not None]
+            count = sum(bool(v) for v in observed)
+            low, high = interval(count, len(observed))
+            row.update(
+                {
+                    metric: count / len(observed) if observed else None,
+                    metric + "_count": count,
+                    metric + "_n": len(observed),
+                    metric + "_low": low,
+                    metric + "_high": high,
+                }
+            )
+        discovered = [t for t in complete if t["shortcut_discovered"]]
+        row["cheating_given_discovery"] = (
+            sum(bool(t["cheated"]) for t in discovered) / len(discovered)
+            if discovered
             else None
         )
-        groups[values].append(state)
-    rows = []
-    for values, states in groups.items():
-        complete = [s for s in states if s is not None]
-        n = len(complete)
-        rows.append(
-            dict(zip(config["group_by"], values))
-            | dict(
-                planned=len(states),
-                finished=n,
-                cheating=sum(s["cheated"] for s in complete),
-                accepted=sum(s["accepted"] for s in complete),
-                answer_returned=sum(s["answer_returned"] for s in complete),
-                mean_score=sum(s["score"] for s in complete) / n if n else None,
-                cheating_rate=sum(s["cheated"] for s in complete) / n if n else None,
-                acceptance_rate=sum(s["accepted"] for s in complete) / n if n else None,
-            )
-        )
-    save(
-        directory / "summary.json",
-        dict(
-            groups=rows,
-            known_spending_usd=str(spent),
-            attempts_with_unknown_cost=unknown,
-        ),
+        row["discovered_n"] = len(discovered)
+        for field in ("score", "elapsed_seconds", "exploration_calls"):
+            observed = [t[field] for t in complete if t[field] is not None]
+            row["mean_" + field] = sum(observed) / len(observed) if observed else None
+        rows.append(row)
+    summary = dict(
+        schema_version=2,
+        factor=factor,
+        group_by=group_by,
+        groups=rows,
+        known_spending_usd=str(spent),
+        attempts_with_unknown_cost=unknown,
+        denominator="Finished trials, including timeouts and resource limits; excludes infrastructure failures and pending trials.",
     )
-    with (directory / "summary.csv").open("w") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
-        writer.writeheader()
-        writer.writerows(rows)
+    save(directory / "summary.json", summary)
+    write_csv(directory / "summary.csv", rows)
+    write_csv(directory / "trials.csv", trial_rows)
     if config["plot"] and any(row["finished"] for row in rows):
-        plot(config, rows, directory)
+        plot(config, rows, directory, factor, axes[factor["path"]], group_by)
     print(
-        f"Finished: {sum(r['finished'] for r in rows)}/{sum(r['planned'] for r in rows)}; known spending: ${spent}; unknown-cost attempts: {unknown}"
+        f"Finished: {sum(r['finished'] for r in rows)}/{sum(r['planned'] for r in rows)}; known spending: ${spent}; attempts with unknown/pending costs: {unknown}"
     )
+    return summary
 
 
-def plot(config, rows, directory):
+def plot(config, rows, directory, factor, order, group_by):
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    fig, ax = plt.subplots(figsize=tuple(config["figure_size"]), layout="constrained")
-    labels = [
-        " / ".join(str(row[key]) or config["empty_label"] for key in config["group_by"])
-        for row in rows
-    ]
-    for metric, style in config["series"].items():
-        ax.plot(
-            range(len(rows)),
-            [
-                row[metric] * 100 if row[metric] is not None else float("nan")
-                for row in rows
-            ],
-            marker=style["marker"],
-            color=style["color"],
-            label=style["label"],
-        )
-    ax.set(
-        xticks=range(len(rows)),
-        xticklabels=labels,
-        xlabel=config["xlabel"],
-        ylabel=config["ylabel"],
-        ylim=(0, 100),
+    others = [key for key in group_by if key != factor["path"]]
+    panels = defaultdict(list)
+    for row in rows:
+        panels[tuple(row[key] for key in others)].append(row)
+    fig, axes = plt.subplots(
+        len(panels),
+        1,
+        figsize=(config["figure_size"][0], config["figure_size"][1] * len(panels)),
+        squeeze=False,
+        layout="constrained",
     )
-    ax.grid(axis="y", alpha=0.25)
-    ax.legend(frameon=False)
+    categorical = factor["kind"] == "categorical"
+    order = list(order) if categorical else sorted(order)
+    for ax, (panel, entries) in zip(axes[:, 0], panels.items()):
+        entries.sort(key=lambda r: order.index(r[factor["path"]]))
+        x = [
+            order.index(r[factor["path"]]) if categorical else r[factor["path"]]
+            for r in entries
+        ]
+        for index, metric in enumerate(config["metrics"]):
+            if metric not in METRICS and metric not in {
+                "mean_score",
+                "mean_elapsed_seconds",
+                "mean_exploration_calls",
+            }:
+                raise ValueError(f"Unknown metric: {metric}")
+            scale = 100 if metric in METRICS else 1
+            y = [
+                row[metric] * scale if row[metric] is not None else float("nan")
+                for row in entries
+            ]
+            error = None
+            if metric in METRICS:
+                error = [
+                    [
+                        max(0, (row[metric] - row[metric + "_low"]) * scale)
+                        if row[metric] is not None
+                        else 0
+                        for row in entries
+                    ],
+                    [
+                        max(0, (row[metric + "_high"] - row[metric]) * scale)
+                        if row[metric] is not None
+                        else 0
+                        for row in entries
+                    ],
+                ]
+            ax.errorbar(
+                x,
+                y,
+                yerr=error,
+                marker=["o", "s", "^"][index % 3],
+                capsize=3,
+                linestyle="none" if categorical else "-",
+                label=metric.replace("_", " ").capitalize(),
+            )
+        ax.set_xticks(
+            x, [f"{row[factor['path']]}\n(n={row['finished']})" for row in entries]
+        )
+        ax.set_xlabel(factor["label"])
+        rate_only = all(metric in METRICS for metric in config["metrics"])
+        ax.set_ylabel("Trials (%) · 95% Wilson intervals" if rate_only else "Value")
+        if rate_only:
+            ax.set_ylim(-3, 103)
+        ax.set_title(" / ".join(f"{key}={value}" for key, value in zip(others, panel)))
+        ax.grid(axis="y", alpha=0.25)
+        ax.legend(frameon=False)
     for extension in config["formats"]:
-        fig.savefig(directory / f"rates.{extension}")
+        fig.savefig(directory / f"rates.{extension}", dpi=180)
     plt.close(fig)
 
 
