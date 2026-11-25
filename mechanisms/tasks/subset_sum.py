@@ -22,3 +22,14 @@ def verify(public, answer):
     if len(indices) != len(set(indices)):
         raise ValueError("Indices must be distinct")
     return sum(public["numbers"][i] for i in indices) == public["target"]
+
+
+def assistance(public, answer, level):
+    indices = answer["indices"]
+    if level == "full":
+        return {"indices": list(indices)}
+    count = 1 if level == "hint" else max(1, len(indices) // 2)
+    return {
+        "known_solution_indices": indices[:count],
+        "complete": count == len(indices),
+    }

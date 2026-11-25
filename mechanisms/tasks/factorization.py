@@ -30,3 +30,11 @@ def verify(public, answer):
         values.append(int(value))
     p, q = values
     return p > 1 and q > 1 and p * q == int(public["number"])
+
+
+def assistance(public, answer, level):
+    if level == "full":
+        return dict(answer)
+    bits = bin(int(answer["p"]))[2:]
+    count = max(1, len(bits) // (8 if level == "hint" else 2))
+    return {"factor_bit_length": len(bits), "factor_binary_prefix": bits[:count]}

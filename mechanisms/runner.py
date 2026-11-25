@@ -5,8 +5,11 @@ import httpx
 
 
 async def conversation(config, env, credentials, client):
+    env.start()
     messages = [{"role": "user", "content": env.instruction}]
     for _ in range(config["execution"]["max_turns"]):
+        if env.remaining() <= 0:
+            return "timeout"
         response = await client.post(
             credentials["url"] + "/chat/completions",
             headers={"Authorization": "Bearer " + credentials["token"]},
@@ -47,10 +50,18 @@ async def conversation(config, env, credentials, client):
         if not calls:
             return "completed"
         for call in calls:
+            if env.remaining() <= 0:
+                return "timeout"
             function = call["function"]
             result = env.call(function["name"], function.get("arguments", ""))
             messages.append(
-                dict(role="tool", tool_call_id=call["id"], content=json.dumps(result))
+                dict(
+                    role="tool",
+                    tool_call_id=call["id"],
+                    content=json.dumps(
+                        dict(result=result, remaining_seconds=round(env.remaining(), 3))
+                    ),
+                )
             )
             if env.state["accepted"]:
                 return "accepted"
