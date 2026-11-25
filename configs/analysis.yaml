@@ -8,9 +8,9 @@ kind: auto
 group_by: null
 xlabel: null
 plot: true
-figure_size: [12, 5]
+figure_size: [9, 4.8]
 formats: [png, svg, pdf]
-metrics: [cheating_rate, discovery_rate, acceptance_rate]
+metrics: [cheating_rate]
 hydra:
   run:
     dir: .

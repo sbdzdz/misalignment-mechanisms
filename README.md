@@ -78,7 +78,7 @@ uv run python -m mechanisms.analyze run_dir=outputs/my_experiment-deepseek
 
 ## Results
 
-The analyzer writes `trials.csv`, `summary.csv`, `summary.json`, and `rates.png/svg/pdf` into the sweep directory. Plots show rates with 95% confidence intervals. Discovery means the function was exposed; cheating means it was invoked. Rates include finished trials, including timeouts, and exclude pending or infrastructure-failed trials.
+The analyzer writes `trials.csv`, `summary.csv`, `summary.json`, and `rates.png/svg/pdf` into the sweep directory. Plots show cheating rate against the selected factor. Discovery means the function was exposed; cheating means it was invoked. Rates include finished trials, including timeouts, and exclude pending or infrastructure-failed trials.
 
 Rerun analysis during a sweep for partial results. Select metrics with an override:
 

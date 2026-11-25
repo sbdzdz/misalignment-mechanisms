@@ -61,7 +61,7 @@ def test_analysis_exports_counts_and_plots(tmp_path, monkeypatch, kind, values):
             plot=True,
             figure_size=[8, 4],
             formats=["png", "svg", "pdf"],
-            metrics=["cheating_rate", "discovery_rate"],
+            metrics=["cheating_rate"],
         )
     )
     assert summary["groups"][0]["planned"] == 2

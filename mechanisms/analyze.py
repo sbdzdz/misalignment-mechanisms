@@ -197,77 +197,100 @@ def plot(config, rows, directory, factor, order, group_by):
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from matplotlib.ticker import PercentFormatter
 
     others = [key for key in group_by if key != factor["path"]]
     panels = defaultdict(list)
     for row in rows:
         panels[tuple(row[key] for key in others)].append(row)
-    fig, axes = plt.subplots(
-        len(panels),
-        1,
-        figsize=(config["figure_size"][0], config["figure_size"][1] * len(panels)),
-        squeeze=False,
-        layout="constrained",
-    )
-    categorical = factor["kind"] == "categorical"
-    order = list(order) if categorical else sorted(order)
-    for ax, (panel, entries) in zip(axes[:, 0], panels.items()):
-        entries.sort(key=lambda r: order.index(r[factor["path"]]))
-        x = [
-            order.index(r[factor["path"]]) if categorical else r[factor["path"]]
-            for r in entries
-        ]
-        for index, metric in enumerate(config["metrics"]):
-            if metric not in METRICS and metric not in {
-                "mean_score",
-                "mean_elapsed_seconds",
-                "mean_exploration_calls",
-            }:
-                raise ValueError(f"Unknown metric: {metric}")
-            scale = 100 if metric in METRICS else 1
-            y = [
-                row[metric] * scale if row[metric] is not None else float("nan")
-                for row in entries
-            ]
-            error = None
-            if metric in METRICS:
-                error = [
-                    [
-                        max(0, (row[metric] - row[metric + "_low"]) * scale)
-                        if row[metric] is not None
-                        else 0
-                        for row in entries
-                    ],
-                    [
-                        max(0, (row[metric + "_high"] - row[metric]) * scale)
-                        if row[metric] is not None
-                        else 0
-                        for row in entries
-                    ],
-                ]
-            ax.errorbar(
-                x,
-                y,
-                yerr=error,
-                marker=["o", "s", "^"][index % 3],
-                capsize=3,
-                linestyle="none" if categorical else "-",
-                label=metric.replace("_", " ").capitalize(),
-            )
-        ax.set_xticks(
-            x, [f"{row[factor['path']]}\n(n={row['finished']})" for row in entries]
+    palette = ["#8172B3", "#5C9EAD", "#D69A76", "#80A889"]
+    with plt.rc_context(
+        {
+            "font.size": 11,
+            "text.color": "#444454",
+            "axes.labelcolor": "#444454",
+            "svg.fonttype": "none",
+            "pdf.fonttype": 42,
+        }
+    ):
+        fig, axes = plt.subplots(
+            len(panels),
+            1,
+            figsize=(config["figure_size"][0], config["figure_size"][1] * len(panels)),
+            squeeze=False,
+            layout="constrained",
         )
-        ax.set_xlabel(factor["label"])
-        rate_only = all(metric in METRICS for metric in config["metrics"])
-        ax.set_ylabel("Trials (%) · 95% Wilson intervals" if rate_only else "Value")
-        if rate_only:
-            ax.set_ylim(-3, 103)
-        ax.set_title(" / ".join(f"{key}={value}" for key, value in zip(others, panel)))
-        ax.grid(axis="y", alpha=0.25)
-        ax.legend(frameon=False)
-    for extension in config["formats"]:
-        fig.savefig(directory / f"rates.{extension}", dpi=180)
-    plt.close(fig)
+        fig.patch.set_facecolor("white")
+        categorical = factor["kind"] == "categorical"
+        order = list(order) if categorical else sorted(order)
+        for ax, (panel, entries) in zip(axes[:, 0], panels.items()):
+            entries.sort(key=lambda r: order.index(r[factor["path"]]))
+            x = [
+                order.index(r[factor["path"]]) if categorical else r[factor["path"]]
+                for r in entries
+            ]
+            for index, metric in enumerate(config["metrics"]):
+                if metric not in METRICS and metric not in {
+                    "mean_score",
+                    "mean_elapsed_seconds",
+                    "mean_exploration_calls",
+                }:
+                    raise ValueError(f"Unknown metric: {metric}")
+                scale = 100 if metric in METRICS else 1
+                y = [
+                    row[metric] * scale if row[metric] is not None else float("nan")
+                    for row in entries
+                ]
+                ax.plot(
+                    x,
+                    y,
+                    color=palette[index % len(palette)],
+                    marker="o",
+                    markersize=7,
+                    markeredgewidth=0,
+                    linewidth=2,
+                    linestyle="none" if categorical else "-",
+                    label=metric.replace("_", " ").capitalize(),
+                    zorder=3,
+                )
+            ax.set_xticks(x, [str(row[factor["path"]]) for row in entries])
+            ax.set_xlabel(factor["label"], labelpad=12)
+            rate_only = all(metric in METRICS for metric in config["metrics"])
+            label = (
+                config["metrics"][0].replace("_", " ").capitalize()
+                if len(config["metrics"]) == 1
+                else "Rate"
+                if rate_only
+                else "Value"
+            )
+            ax.set_ylabel(label, labelpad=12)
+            if rate_only:
+                ax.set_ylim(-3, 103)
+                ax.set_yticks(range(0, 101, 20))
+                ax.yaxis.set_major_formatter(PercentFormatter(xmax=100, decimals=0))
+            if others:
+                ax.set_title(
+                    " / ".join(f"{key}={value}" for key, value in zip(others, panel)),
+                    loc="left",
+                    pad=16,
+                )
+            for spine in ax.spines.values():
+                spine.set_visible(False)
+            ax.set_facecolor("white")
+            ax.set_axisbelow(True)
+            ax.grid(axis="both", color="#E9E7EF", linewidth=0.7)
+            ax.tick_params(axis="both", which="both", length=0, pad=8, colors="#6C6B7A")
+            ax.margins(x=0.04)
+            if len(config["metrics"]) > 1:
+                ax.legend(frameon=False)
+        for extension in config["formats"]:
+            fig.savefig(
+                directory / f"rates.{extension}",
+                dpi=200,
+                facecolor="white",
+                edgecolor="none",
+            )
+        plt.close(fig)
 
 
 if __name__ == "__main__":
