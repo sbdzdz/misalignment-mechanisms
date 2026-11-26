@@ -20,6 +20,7 @@ class Budget:
         self.spent = Decimal(0)
         self.unknown = False
         self.requests = []
+        self.in_flight = 0
         self.lock = threading.Lock()
         self.save()
 
@@ -58,6 +59,7 @@ class Budget:
                     "limit_usd": str(self.limit),
                     "spent_usd": str(self.spent),
                     "status": self.status,
+                    "in_flight": self.in_flight,
                     "requests": self.requests,
                 },
                 indent=2,
@@ -91,6 +93,8 @@ class BudgetProxy:
         )
         self.key = key
         self.stopping = False
+        # Separate from budget.lock, which is held for a whole request.
+        self.state = threading.Lock()
         proxy = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -135,13 +139,16 @@ class BudgetProxy:
                     if proxy.model is not None and payload.get("model") != proxy.model:
                         self.error(403, "Model not permitted for this run")
                         return
-                    if proxy.stopping:
-                        self.error(503, "Run has ended")
-                        return
                     if proxy.budget.status != "available":
                         self.error(402, proxy.budget.status)
                         return
-                    self.forward(payload)
+                    if not proxy.begin():
+                        self.error(503, "Run has ended")
+                        return
+                    try:
+                        self.forward(payload)
+                    finally:
+                        proxy.end()
 
             def forward(self, payload):
                 cost, generation = (None, None)
@@ -269,10 +276,39 @@ class BudgetProxy:
         self.thread.start()
         return self
 
+    def begin(self):
+        """Register an upstream request unless the run has ended.
+
+        Returns:
+            True if the request may proceed.
+        """
+        with self.state:
+            if self.stopping:
+                return False
+            self.budget.in_flight += 1
+            self.budget.save()
+            return True
+
+    def end(self):
+        """Unregister a request; release the client once closed and idle."""
+        with self.state:
+            self.budget.in_flight -= 1
+            self.budget.save()
+            release = self.stopping and not self.budget.in_flight
+        if release:
+            self.client.close()
+
     def __exit__(self, *args):
-        self.stopping = True
+        """Stop serving; requests in flight finish and record their cost.
+
+        Args:
+            args: Exception type, value, and traceback; unused.
+        """
+        with self.state:
+            self.stopping = True
+            idle = not self.budget.in_flight
         self.server.shutdown()
         self.server.server_close()
         self.thread.join()
-        with self.budget.lock:
+        if idle:
             self.client.close()

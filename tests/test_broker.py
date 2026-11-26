@@ -1,5 +1,7 @@
 import json
+import socket
 import tempfile
+import threading
 import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -8,10 +10,77 @@ from pathlib import Path
 
 import httpx
 
+from mechanisms.broker import broker_request
 from mechanisms.proxy import BudgetProxy
 
 
+class BrokerRequestTests(unittest.TestCase):
+    def test_missing_reply_is_a_runtime_error(self):
+        """A broker that hangs up without replying raises RuntimeError."""
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "broker.sock"
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:
+                server.bind(str(path))
+                server.listen(1)
+
+                def hang_up():
+                    """Accept one request and close without replying."""
+                    connection, _ = server.accept()
+                    connection.recv(65536)
+                    connection.close()
+
+                thread = threading.Thread(target=hang_up)
+                thread.start()
+                with self.assertRaises(RuntimeError):
+                    broker_request(
+                        {"action": "close", "run_id": "x"},
+                        {"socket": str(path), "request_timeout_sec": 1},
+                    )
+                thread.join()
+
+
 class BudgetProxyTests(unittest.TestCase):
+    def test_close_does_not_wait_for_in_flight_request(self):
+        """Closing returns at once; the late reply still records its cost."""
+        release = threading.Event()
+
+        def upstream(request):
+            """Answer only after the test releases the reply.
+
+            Args:
+                request: Forwarded model request.
+
+            Returns:
+                Response with a known cost.
+            """
+            release.wait(5)
+            return httpx.Response(200, json={"id": "gen-late", "usage": {"cost": 0.01}})
+
+        with tempfile.TemporaryDirectory() as directory:
+            ledger = Path(directory) / "budget.json"
+            proxy = BudgetProxy(
+                "key",
+                1,
+                ledger,
+                client=httpx.Client(transport=httpx.MockTransport(upstream)),
+            ).__enter__()
+            with ThreadPoolExecutor(1) as pool:
+                pending = pool.submit(self.request, proxy)
+                deadline = time.monotonic() + 5
+                while not proxy.budget.in_flight and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                started = time.monotonic()
+                proxy.__exit__(None, None, None)
+                self.assertLess(time.monotonic() - started, 1)
+                self.assertEqual(json.loads(ledger.read_text())["in_flight"], 1)
+                self.assertFalse(proxy.client.is_closed)
+                release.set()
+                self.assertEqual(pending.result().status_code, 200)
+            recorded = json.loads(ledger.read_text())
+            self.assertEqual(recorded["in_flight"], 0)
+            self.assertEqual(recorded["spent_usd"], "0.01")
+            self.assertTrue(proxy.client.is_closed)
+
     def test_truncated_stream_cost_recovered_before_next_request(self):
         methods = []
 

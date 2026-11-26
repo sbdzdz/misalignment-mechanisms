@@ -82,6 +82,13 @@ def summarize(config):
         )
     if factor["kind"] not in {"discrete", "continuous", "categorical"}:
         raise ValueError("Unknown factor kind")
+    factor["scale"] = config.get("scale") or factor.get("scale", "linear")
+    if factor["scale"] not in {"linear", "log"}:
+        raise ValueError("Factor scale must be linear or log")
+    if factor["scale"] == "log" and (
+        factor["kind"] == "categorical" or any(v <= 0 for v in axes[factor["path"]])
+    ):
+        raise ValueError("A log scale needs a numeric factor with positive values")
     group_by = config.get("group_by") or list(axes)
     if factor["path"] not in group_by or not set(axes).issubset(group_by):
         raise ValueError(
@@ -99,8 +106,10 @@ def summarize(config):
             if budget.exists():
                 ledger = read(budget)
                 cost += Decimal(ledger["spent_usd"])
-                missing += ledger["status"] == "cost_unknown" or bool(
-                    attempt.get("cost_pending")
+                missing += (
+                    ledger["status"] == "cost_unknown"
+                    or ledger.get("in_flight", 0) > 0
+                    or bool(attempt.get("cost_pending"))
                 )
             else:
                 missing += 1
@@ -197,7 +206,7 @@ def plot(config, rows, directory, factor, order, group_by):
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    from matplotlib.ticker import PercentFormatter
+    from matplotlib.ticker import NullLocator, PercentFormatter
 
     others = [key for key in group_by if key != factor["path"]]
     panels = defaultdict(list)
@@ -253,6 +262,9 @@ def plot(config, rows, directory, factor, order, group_by):
                     label=metric.replace("_", " ").capitalize(),
                     zorder=3,
                 )
+            if factor["scale"] == "log":
+                ax.set_xscale("log")
+                ax.xaxis.set_minor_locator(NullLocator())
             ax.set_xticks(x, [str(row[factor["path"]]) for row in entries])
             ax.set_xlabel(factor["label"], labelpad=12)
             rate_only = all(metric in METRICS for metric in config["metrics"])

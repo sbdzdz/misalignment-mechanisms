@@ -8,15 +8,29 @@ from mechanisms.storage import save
 
 
 @pytest.mark.parametrize(
-    "kind, values",
-    [("discrete", [0, 2, 20]), ("categorical", ["hint", "partial", "full"])],
+    "kind, values, scale",
+    [
+        ("discrete", [0, 2, 20], "linear"),
+        ("categorical", ["hint", "partial", "full"], "linear"),
+        ("continuous", [30, 300, 3600], "log"),
+    ],
 )
-def test_analysis_exports_counts_and_plots(tmp_path, monkeypatch, kind, values):
+def test_analysis_exports_counts_and_plots(tmp_path, monkeypatch, kind, values, scale):
+    """Analysis exports counts and plots for each factor kind and scale.
+
+    Args:
+        tmp_path: Temporary project root.
+        monkeypatch: Pytest monkeypatch fixture.
+        kind: Factor kind.
+        values: Factor values.
+        scale: Axis scale.
+    """
     monkeypatch.setattr(analyze, "ROOT", tmp_path)
     directory = tmp_path / "sweep"
     key = "treatment.value"
     experiment = dict(
-        axes={key: values}, factor=dict(path=key, label="Test factor", kind=kind)
+        axes={key: values},
+        factor=dict(path=key, label="Test factor", kind=kind, scale=scale),
     )
     trials = []
     for i, value in enumerate(values):
@@ -70,6 +84,5 @@ def test_analysis_exports_counts_and_plots(tmp_path, monkeypatch, kind, values):
     assert summary["groups"][1]["timeout_rate"] == 1
     for file in ("summary.csv", "trials.csv", "rates.png", "rates.svg", "rates.pdf"):
         assert (directory / file).stat().st_size > 0
-    assert (
-        json.loads((directory / "summary.json").read_text())["factor"]["kind"] == kind
-    )
+    factor = json.loads((directory / "summary.json").read_text())["factor"]
+    assert (factor["kind"], factor["scale"]) == (kind, scale)

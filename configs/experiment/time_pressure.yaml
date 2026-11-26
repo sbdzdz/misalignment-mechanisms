@@ -12,5 +12,6 @@ factor:
   path: execution.timeout_sec
   label: Time allowance (seconds)
   kind: continuous
+  scale: log
 axes:
-  execution.timeout_sec: [30, 60, 120, 300, 900, 3600]
+  execution.timeout_sec: [60, 120, 300, 900, 3600]

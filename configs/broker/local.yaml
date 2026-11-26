@@ -1,6 +1,7 @@
 keychain_service: misalignment-mechanisms.openrouter
 keychain_account: ${oc.env:USER}
-socket: outputs/broker/control.sock
+# Short path: macOS caps Unix socket paths at 104 bytes.
+socket: ${oc.env:TMPDIR,/tmp}/mm-broker/control.sock
 output_root: outputs/runs
 base_url: https://openrouter.ai/api/v1
 models:

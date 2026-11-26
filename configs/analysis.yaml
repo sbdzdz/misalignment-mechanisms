@@ -5,6 +5,7 @@ defaults:
 run_dir: outputs/discoverability-depth-deepseek
 factor: null
 kind: auto
+scale: null
 group_by: null
 xlabel: null
 plot: true

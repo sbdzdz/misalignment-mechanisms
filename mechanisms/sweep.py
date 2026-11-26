@@ -12,7 +12,7 @@ from omegaconf import OmegaConf
 from mechanisms.broker import broker_request
 from mechanisms.config import ROOT, cli
 from mechanisms.environment import TASKS, Environment
-from mechanisms.runner import run
+from mechanisms.runner import ProviderError, run
 from mechanisms.storage import digest, read, save
 
 
@@ -137,7 +137,13 @@ async def execute(config, directory, manifest):
                     retryable=retryable,
                     error=f"HTTP {error.response.status_code}",
                 )
-            except (httpx.TransportError, KeyError, IndexError, ValueError) as error:
+            except (
+                httpx.TransportError,
+                ProviderError,
+                KeyError,
+                IndexError,
+                ValueError,
+            ) as error:
                 record.update(
                     status="failed", retryable=True, error=type(error).__name__
                 )

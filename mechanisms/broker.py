@@ -48,7 +48,11 @@ def broker_request(payload, config):
             ) from None
         connection.sendall(json.dumps(payload).encode() + b"\n")
         with connection.makefile("rb") as stream:
-            result = json.loads(stream.readline(65536))
+            line = stream.readline(65536)
+    try:
+        result = json.loads(line)
+    except ValueError:
+        raise RuntimeError("Broker closed the connection without a reply") from None
     if "error" in result:
         raise RuntimeError(result["error"])
     return result

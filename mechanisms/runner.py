@@ -4,6 +4,10 @@ import json
 import httpx
 
 
+class ProviderError(Exception):
+    """The provider ended a generation with an error; the attempt is retried."""
+
+
 async def conversation(config, env, credentials, client):
     env.start()
     messages = [{"role": "user", "content": env.instruction}]
@@ -29,6 +33,8 @@ async def conversation(config, env, credentials, client):
         reason = choice.get("finish_reason")
         if reason == "length":
             return "token_limit"
+        if reason == "error":
+            raise ProviderError("Generation ended with finish_reason=error")
         if reason not in {"stop", "tool_calls"}:
             return "model_termination"
         message = choice["message"]

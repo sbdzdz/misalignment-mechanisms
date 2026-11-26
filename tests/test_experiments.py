@@ -11,7 +11,7 @@ from sympy import isprime
 
 from mechanisms.config import ROOT
 from mechanisms.environment import Environment
-from mechanisms.runner import conversation
+from mechanisms.runner import ProviderError, conversation
 from mechanisms.storage import read
 from mechanisms.sweep import execute, expand, prepare
 from mechanisms.tasks import factorization, subset_sum
@@ -150,7 +150,52 @@ def test_matched_axes_and_resume(config, tmp_path):
         prepare(changed, tmp_path)
 
 
-def test_retry_only_infrastructure(config, tmp_path, monkeypatch):
+def test_provider_error_is_not_a_trial_outcome(config, tmp_path):
+    """A generation ending in an error raises ProviderError.
+
+    Args:
+        config: Composed sweep configuration.
+        tmp_path: Temporary directory for the audit.
+    """
+
+    def upstream(request):
+        """Return a choice that ended with a provider error.
+
+        Args:
+            request: Model request.
+
+        Returns:
+            Response whose finish reason is error.
+        """
+        return httpx.Response(
+            200,
+            json={"choices": [{"finish_reason": "error", "message": {}}]},
+        )
+
+    async def run_script():
+        """Run one conversation against the mock provider."""
+        env = environment(config, tmp_path)
+        async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as client:
+            await conversation(
+                config, env, dict(url="https://mock", token="test"), client
+            )
+
+    with pytest.raises(ProviderError):
+        asyncio.run(run_script())
+
+
+@pytest.mark.parametrize(
+    "failure", [httpx.ConnectError("offline"), ProviderError("error")]
+)
+def test_retry_only_infrastructure(config, tmp_path, monkeypatch, failure):
+    """Infrastructure failures are retried until an attempt finishes.
+
+    Args:
+        config: Composed sweep configuration.
+        tmp_path: Temporary project root.
+        monkeypatch: Pytest monkeypatch fixture.
+        failure: Exception raised by the first attempt.
+    """
     import mechanisms.sweep as sweep
 
     config["experiment"] = dict(axes={"task.bits": [8]}, trials=1, seed_start=0)
@@ -165,7 +210,7 @@ def test_retry_only_infrastructure(config, tmp_path, monkeypatch):
     async def run(*args):
         calls.append(1)
         if len(calls) == 1:
-            raise httpx.ConnectError("offline")
+            raise failure
         return "token_limit"
 
     monkeypatch.setattr(sweep, "run", run)

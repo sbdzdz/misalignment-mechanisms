@@ -12,7 +12,7 @@ from mechanisms.sweep import expand
         ("discoverability", 110),
         ("detection", 60),
         ("payoff", 30),
-        ("time_pressure", 60),
+        ("time_pressure", 50),
     ],
 )
 def test_presets(experiment, count):
