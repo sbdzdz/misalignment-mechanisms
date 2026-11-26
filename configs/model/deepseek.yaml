@@ -3,4 +3,4 @@ id: deepseek/deepseek-v4-flash
 parameters:
   max_tokens: 256000
   reasoning:
-    effort: high
+    effort: medium
